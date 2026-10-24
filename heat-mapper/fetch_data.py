@@ -1,6 +1,5 @@
 import ee, geemap, geopandas as gpd, osmnx as ox
 from shapely.geometry import Point, box
-import json
 
 # ---------- SETTINGS: change these ----------
 PROJECT = "trial-heatmap"
@@ -58,43 +57,6 @@ b = geemap.ee_to_gdf(pops)[["id", "sum"]].rename(columns={"sum": "pop"})
 out = a[["id", "lst", "ndvi", "builtup", "geometry"]].merge(b, on="id")
 out.to_file("cells.geojson", driver="GeoJSON")
 print("Saved", len(out), "cells")
-
-age_collection = ee.ImageCollection("WorldPop/GP/100m/pop_age_sex")
-
-# Filter for the region of interest (roi) and year
-age_image = age_collection.filterBounds(aoi).filter(ee.Filter.eq('year', 2020)).first()
-
-# 2. Select bands corresponding to senior citizens (65+ years old, male and female)
-elderly_bands = ['M_65', 'M_70', 'M_75', 'M_80', 'F_65', 'F_70', 'F_75', 'F_80']
-elderly_raster = age_image.select(elderly_bands).reduce(ee.Reducer.sum())
-
-# 3. Extract these values into your geographic grid 
-# (Make sure 'ee_grid_poly' matches whatever variable name you used for your GEE grid collection)
-features = elderly_raster.reduceRegions(
-    collection=grid,  
-    reducer=ee.Reducer.sum(),
-    scale=100
-)
-
-# 4. Convert to GeoPandas DataFrame and properly fix the rename syntax
-cells_gdf = geemap.ee_to_gdf(features)
-cells_gdf = cells_gdf.rename(columns={'sum': 'elderly'})
-
-# 5. Save permanently into your geojson
-cells_gdf.to_file("cells.geojson", driver="GeoJSON")
-
-era = (ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")
-       .filterDate(START, END)
-       .select("temperature_2m_max").mean())
-val = era.reduceRegion(ee.Reducer.mean(), aoi.centroid(), 11132).getInfo()
-kelvin = val.get("temperature_2m_max")
-if kelvin is None:
-    print("ERA5 returned nothing - check the dataset and band name in the Earth Engine catalogue")
-else:
-    with open("airtemp.json", "w") as f:
-        json.dump({"era5_tmax_mean_c": round(kelvin - 273.15, 1),
-                   "start": START, "end": END}, f)
-    print("Saved airtemp.json")
 
 # 4) Parks and public buildings from OpenStreetMap
 parks = ox.features_from_point((LAT, LON),
